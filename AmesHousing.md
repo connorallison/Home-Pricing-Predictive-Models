@@ -1,7 +1,7 @@
 Ames Housing Prices Model
 ================
 Connor Allison
-2025-04-24
+2025-05-04
 
 ``` r
 library(tidyverse)
@@ -46,6 +46,71 @@ library(caret)
     ## The following object is masked from 'package:purrr':
     ## 
     ##     lift
+
+``` r
+library(xgboost)
+```
+
+    ## 
+    ## Attaching package: 'xgboost'
+    ## 
+    ## The following object is masked from 'package:dplyr':
+    ## 
+    ##     slice
+
+``` r
+library(e1071)    
+library(BART)       
+```
+
+    ## Loading required package: nlme
+    ## 
+    ## Attaching package: 'nlme'
+    ## 
+    ## The following object is masked from 'package:dplyr':
+    ## 
+    ##     collapse
+    ## 
+    ## Loading required package: survival
+    ## 
+    ## Attaching package: 'survival'
+    ## 
+    ## The following object is masked from 'package:caret':
+    ## 
+    ##     cluster
+
+``` r
+library(car)       
+```
+
+    ## Loading required package: carData
+    ## 
+    ## Attaching package: 'car'
+    ## 
+    ## The following object is masked from 'package:dplyr':
+    ## 
+    ##     recode
+    ## 
+    ## The following object is masked from 'package:purrr':
+    ## 
+    ##     some
+
+``` r
+library(corrplot) 
+```
+
+    ## corrplot 0.94 loaded
+
+``` r
+library(ranger)
+```
+
+    ## 
+    ## Attaching package: 'ranger'
+    ## 
+    ## The following object is masked from 'package:randomForest':
+    ## 
+    ##     importance
 
 Load the data
 
@@ -388,7 +453,7 @@ these observations.
 outliers = c()
 
 outliers = append(outliers, which(all_homes$MiscVal > 100))
-outliers = append(outliers, which(all_homes$LotArea > 50000))
+outliers = append(outliers, which(all_homes$LotArea > 30000))
 outliers = append(outliers, which(all_homes$LotFrontage == max(range(all_homes$LotFrontage, na.rm = T))))
 outliers = append(outliers, which(all_homes$MasVnrArea > 1000))
 outliers = append(outliers, which(all_homes$BsmtFinSF1 == max(range(all_homes$BsmtFinSF1, na.rm = T))))
@@ -459,13 +524,13 @@ colSums(is.na(all_homes))
 ```
 
     ##    MSSubClass      MSZoning   LotFrontage       LotArea      LotShape 
-    ##             0             3           440             0             0 
+    ##             0             2           435             0             0 
     ##   LandContour     LotConfig  Neighborhood    Condition1      BldgType 
     ##             0             0             0             0             0 
     ##    HouseStyle   OverallQual   OverallCond     YearBuilt  YearRemodAdd 
     ##             0             0             0             0             0 
     ##     RoofStyle   Exterior1st   Exterior2nd    MasVnrType    MasVnrArea 
-    ##             0             1             1            24            23 
+    ##             0             1             1            23            22 
     ##     ExterQual     ExterCond    Foundation      BsmtQual      BsmtCond 
     ##             0             0             0             0             0 
     ##  BsmtExposure  BsmtFinType1    BsmtFinSF1  BsmtFinType2     BsmtUnfSF 
@@ -477,16 +542,19 @@ colSums(is.na(all_homes))
     ##      HalfBath  BedroomAbvGr   KitchenQual  TotRmsAbvGrd    Functional 
     ##             0             0             1             0             1 
     ##   FireplaceQu    GarageType   GarageYrBlt  GarageFinish    GarageCars 
-    ##          1330             0             0             0             0 
+    ##          1325             0             0             0             0 
     ##    GarageArea    GarageQual    GarageCond    PavedDrive    WoodDeckSF 
     ##             0             0             0             0             0 
     ##   OpenPorchSF        MoSold        YrSold      SaleType SaleCondition 
     ##             0             0             0             1             0 
     ##     SalePrice 
-    ##          1369
+    ##          1361
 
 ``` r
 all_homes$FireplaceQu = replace_na(all_homes$FireplaceQu, "0")
+
+all_homes = all_homes %>% 
+  select(-LotFrontage)
 ```
 
 For the rest of the data replace NAs with mean or mode depending on type
@@ -548,11 +616,10 @@ all_homes_clean = all_homes %>%
 ```
 
     ## Replaced NAs in character column MSZoning with mode: RL 
-    ## Replaced NAs in numeric column LotFrontage with mean: 68.7917398945518 
     ## Replaced NAs in character column Exterior1st with mode: VinylSd 
     ## Replaced NAs in character column Exterior2nd with mode: VinylSd 
     ## Replaced NAs in character column MasVnrType with mode: None 
-    ## Replaced NAs in numeric column MasVnrArea with mean: 98.4693650204233 
+    ## Replaced NAs in numeric column MasVnrArea with mean: 97.8452914798206 
     ## Replaced NAs in character column Electrical with mode: SBrkr 
     ## Replaced NAs in character column KitchenQual with mode: TA 
     ## Replaced NAs in character column Functional with mode: Typ 
@@ -578,32 +645,30 @@ all_homes_clean$SalePrice = all_homes$SalePrice
 colSums(is.na(all_homes_clean))
 ```
 
-    ##    MSSubClass      MSZoning   LotFrontage       LotArea      LotShape 
+    ##    MSSubClass      MSZoning       LotArea      LotShape   LandContour 
     ##             0             0             0             0             0 
-    ##   LandContour     LotConfig  Neighborhood    Condition1      BldgType 
+    ##     LotConfig  Neighborhood    Condition1      BldgType    HouseStyle 
     ##             0             0             0             0             0 
-    ##    HouseStyle   OverallQual   OverallCond     YearBuilt  YearRemodAdd 
+    ##   OverallQual   OverallCond     YearBuilt  YearRemodAdd     RoofStyle 
     ##             0             0             0             0             0 
-    ##     RoofStyle   Exterior1st   Exterior2nd    MasVnrType    MasVnrArea 
+    ##   Exterior1st   Exterior2nd    MasVnrType    MasVnrArea     ExterQual 
     ##             0             0             0             0             0 
-    ##     ExterQual     ExterCond    Foundation      BsmtQual      BsmtCond 
+    ##     ExterCond    Foundation      BsmtQual      BsmtCond  BsmtExposure 
     ##             0             0             0             0             0 
-    ##  BsmtExposure  BsmtFinType1    BsmtFinSF1  BsmtFinType2     BsmtUnfSF 
+    ##  BsmtFinType1    BsmtFinSF1  BsmtFinType2     BsmtUnfSF   TotalBsmtSF 
     ##             0             0             0             0             0 
-    ##   TotalBsmtSF     HeatingQC    CentralAir    Electrical      1stFlrSF 
+    ##     HeatingQC    CentralAir    Electrical      1stFlrSF      2ndFlrSF 
     ##             0             0             0             0             0 
-    ##      2ndFlrSF     GrLivArea  BsmtFullBath  BsmtHalfBath      FullBath 
+    ##     GrLivArea  BsmtFullBath  BsmtHalfBath      FullBath      HalfBath 
     ##             0             0             0             0             0 
-    ##      HalfBath  BedroomAbvGr   KitchenQual  TotRmsAbvGrd    Functional 
+    ##  BedroomAbvGr   KitchenQual  TotRmsAbvGrd    Functional   FireplaceQu 
     ##             0             0             0             0             0 
-    ##   FireplaceQu    GarageType   GarageYrBlt  GarageFinish    GarageCars 
+    ##    GarageType   GarageYrBlt  GarageFinish    GarageCars    GarageArea 
     ##             0             0             0             0             0 
-    ##    GarageArea    GarageQual    GarageCond    PavedDrive    WoodDeckSF 
+    ##    GarageQual    GarageCond    PavedDrive    WoodDeckSF   OpenPorchSF 
     ##             0             0             0             0             0 
-    ##   OpenPorchSF        MoSold        YrSold      SaleType SaleCondition 
-    ##             0             0             0             0             0 
-    ##     SalePrice 
-    ##          1369
+    ##        MoSold        YrSold      SaleType SaleCondition     SalePrice 
+    ##             0             0             0             0          1361
 
 We also need to address the sqft redundancy. We are going to replace
 1stFlrSF and 2ndFlrSF with percents that represent how much of the total
@@ -630,13 +695,13 @@ Review the two new data frames
 dim(train)
 ```
 
-    ## [1] 1347   61
+    ## [1] 1337   60
 
 ``` r
 dim(test)
 ```
 
-    ## [1] 1369   60
+    ## [1] 1361   59
 
 ## Exploratory Analysis
 
@@ -657,12 +722,12 @@ train %>%
     ## # A tibble: 6 × 2
     ##   FireplaceQu Count
     ##   <chr>       <int>
-    ## 1 0             642
+    ## 1 0             640
     ## 2 Ex             22
     ## 3 Fa             31
-    ## 4 Gd            354
+    ## 4 Gd            351
     ## 5 Po             18
-    ## 6 TA            280
+    ## 6 TA            275
 
 ``` r
 fire = train %>%
@@ -713,13 +778,13 @@ all_homes_clean %>%
     ## # A tibble: 7 × 2
     ##   Functional Count
     ##   <chr>      <int>
-    ## 1 Maj1          16
+    ## 1 Maj1          15
     ## 2 Maj2           7
-    ## 3 Min1          52
+    ## 3 Min1          50
     ## 4 Min2          59
-    ## 5 Mod           29
+    ## 5 Mod           25
     ## 6 Sev            2
-    ## 7 Typ         2551
+    ## 7 Typ         2540
 
 ``` r
 all_homes_clean %>% 
@@ -753,8 +818,8 @@ all_homes_clean %>%
     ## # A tibble: 3 × 2
     ##   HalfBath Count
     ##      <dbl> <int>
-    ## 1        0  1698
-    ## 2        1   996
+    ## 1        0  1689
+    ## 2        1   987
     ## 3        2    22
 
 ``` r
@@ -777,6 +842,22 @@ stories %>%
 this plot, it seems clear to me that 2-story houses are more likely to
 have a half bath.
 
+Relationship between Overall Quality and Sales Price
+
+``` r
+train %>% 
+  select(SalePrice, OverallQual) %>% 
+  ggplot(aes(x = as.factor(OverallQual), y = SalePrice, fill = as.factor(OverallQual), colour = OverallQual)) +
+  geom_boxplot(alpha = .5) +
+  scale_y_continuous(labels = scales::label_dollar()) +
+  xlab("Overall Quality") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  ggtitle("Sales Price and Overall Quality")
+```
+
+![](AmesHousing_files/figure-gfm/unnamed-chunk-34-1.png)<!-- -->
+
 ### Variable selection throught randomForest importance metric
 
 Split the training data into train and validate
@@ -791,13 +872,13 @@ validation_set = train[-trainIndex, ]
 cat("Training set size:", nrow(train_set), "\n")
 ```
 
-    ## Training set size: 945
+    ## Training set size: 937
 
 ``` r
 cat("Validation set size:", nrow(validation_set), "\n")
 ```
 
-    ## Validation set size: 402
+    ## Validation set size: 400
 
 Build RF and get the 10 most important variables
 
@@ -827,8 +908,8 @@ cat("Top 10 most important variables:\n")
 print(top_10_vars)
 ```
 
-    ##  [1] "GrLivArea"   "OverallQual" "TotalBsmtSF" "YearBuilt"   "GarageArea" 
-    ##  [6] "BsmtFinSF1"  "ExterQual"   "MSSubClass"  "FullBath"    "LotArea"
+    ##  [1] "GrLivArea"   "OverallQual" "TotalBsmtSF" "BsmtFinSF1"  "GarageArea" 
+    ##  [6] "YearBuilt"   "ExterQual"   "FireplaceQu" "MSZoning"    "LotArea"
 
 Plot of variable importance
 
@@ -841,7 +922,7 @@ sorted_importance[1:10, ] %>%
   theme_minimal()
 ```
 
-![](AmesHousing_files/figure-gfm/unnamed-chunk-36-1.png)<!-- -->
+![](AmesHousing_files/figure-gfm/unnamed-chunk-37-1.png)<!-- -->
 
 Create a dataframe with only the top 10 variables plus SalePrice
 
@@ -852,13 +933,60 @@ validation_set_top10 = validation_set[, c(top_10_vars, "SalePrice")]
 cat("Dimensions of reduced training set:", dim(train_set_top10), "\n")
 ```
 
-    ## Dimensions of reduced training set: 945 11
+    ## Dimensions of reduced training set: 937 11
 
 ``` r
 cat("Dimensions of reduced validation set:", dim(validation_set_top10), "\n")
 ```
 
-    ## Dimensions of reduced validation set: 402 11
+    ## Dimensions of reduced validation set: 400 11
+
+##### Linear Regression Model
+
+Check for multicollienarity issues
+
+``` r
+linear_train_top10 = train_set_top10 %>% 
+  mutate(ExterQual = as.factor(ExterQual), MSZoning = as.factor(MSZoning), FireplaceQu = as.factor(FireplaceQu))
+linear_val_top10 = validation_set_top10 %>% 
+  mutate(ExterQual = as.factor(ExterQual), MSZoning = as.factor(MSZoning), FireplaceQu = as.factor(FireplaceQu))
+correlation_matrix = linear_train_top10 %>% 
+  select(-ExterQual, -MSZoning, -FireplaceQu) %>% 
+  cor()
+print("Correlation matrix of predictors:")
+```
+
+    ## [1] "Correlation matrix of predictors:"
+
+``` r
+print(round(correlation_matrix, 2))
+```
+
+    ##             GrLivArea OverallQual TotalBsmtSF BsmtFinSF1 GarageArea YearBuilt
+    ## GrLivArea        1.00        0.60        0.41       0.13       0.49      0.22
+    ## OverallQual      0.60        1.00        0.54       0.18       0.57      0.58
+    ## TotalBsmtSF      0.41        0.54        1.00       0.44       0.46      0.39
+    ## BsmtFinSF1       0.13        0.18        0.44       1.00       0.22      0.24
+    ## GarageArea       0.49        0.57        0.46       0.22       1.00      0.47
+    ## YearBuilt        0.22        0.58        0.39       0.24       0.47      1.00
+    ## LotArea          0.40        0.18        0.32       0.17       0.29      0.06
+    ## SalePrice        0.73        0.81        0.66       0.37       0.64      0.56
+    ##             LotArea SalePrice
+    ## GrLivArea      0.40      0.73
+    ## OverallQual    0.18      0.81
+    ## TotalBsmtSF    0.32      0.66
+    ## BsmtFinSF1     0.17      0.37
+    ## GarageArea     0.29      0.64
+    ## YearBuilt      0.06      0.56
+    ## LotArea        1.00      0.38
+    ## SalePrice      0.38      1.00
+
+``` r
+corrplot(correlation_matrix, method = "color", type = "upper", 
+         tl.col = "black", tl.srt = 45)
+```
+
+![](AmesHousing_files/figure-gfm/unnamed-chunk-39-1.png)<!-- -->
 
 ### Model using top 10 features
 
@@ -866,79 +994,11 @@ Using the 10 most important variables, I am going to explore different
 models.
 
 ``` r
-library(xgboost)
-```
-
-    ## 
-    ## Attaching package: 'xgboost'
-
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     slice
-
-``` r
-library(e1071)    
-library(BART)       
-```
-
-    ## Loading required package: nlme
-
-    ## 
-    ## Attaching package: 'nlme'
-
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     collapse
-
-    ## Loading required package: survival
-
-    ## 
-    ## Attaching package: 'survival'
-
-    ## The following object is masked from 'package:caret':
-    ## 
-    ##     cluster
-
-``` r
-library(car)       
-```
-
-    ## Loading required package: carData
-
-    ## 
-    ## Attaching package: 'car'
-
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     recode
-
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     some
-
-``` r
-library(corrplot) 
-```
-
-    ## corrplot 0.94 loaded
-
-``` r
-library(ranger)
-```
-
-    ## 
-    ## Attaching package: 'ranger'
-
-    ## The following object is masked from 'package:randomForest':
-    ## 
-    ##     importance
-
-``` r
 set.seed(23)
 
 ctrl = trainControl(
   method = "cv",           
-  number = 5,              
+  number = 10,              
   verboseIter = TRUE,      
   savePredictions = "final" 
 )
@@ -987,6 +1047,60 @@ build_and_evaluate = function(model_type, train_data, test_data, tune_grid = NUL
 }
 ```
 
+Build Linear Regression models
+
+``` r
+initial_lm = lm(SalePrice ~ ., data = linear_train_top10)
+vif_values = vif(initial_lm)
+print("Variance Inflation Factors (VIF):")
+```
+
+    ## [1] "Variance Inflation Factors (VIF):"
+
+``` r
+print(vif_values)
+```
+
+    ##                 GVIF Df GVIF^(1/(2*Df))
+    ## GrLivArea   2.150069  1        1.466311
+    ## OverallQual 3.533919  1        1.879872
+    ## TotalBsmtSF 1.939798  1        1.392766
+    ## BsmtFinSF1  1.340646  1        1.157863
+    ## GarageArea  1.806414  1        1.344029
+    ## YearBuilt   2.404847  1        1.550757
+    ## ExterQual   2.926777  3        1.196001
+    ## FireplaceQu 1.805504  5        1.060864
+    ## MSZoning    1.794050  4        1.075794
+    ## LotArea     1.565582  1        1.251232
+
+``` r
+models = list()
+models$lm = build_and_evaluate("lm", linear_train_top10, linear_val_top10)
+```
+
+    ## + Fold01: intercept=TRUE 
+    ## - Fold01: intercept=TRUE 
+    ## + Fold02: intercept=TRUE 
+    ## - Fold02: intercept=TRUE 
+    ## + Fold03: intercept=TRUE 
+    ## - Fold03: intercept=TRUE 
+    ## + Fold04: intercept=TRUE 
+    ## - Fold04: intercept=TRUE 
+    ## + Fold05: intercept=TRUE 
+    ## - Fold05: intercept=TRUE 
+    ## + Fold06: intercept=TRUE 
+    ## - Fold06: intercept=TRUE 
+    ## + Fold07: intercept=TRUE 
+    ## - Fold07: intercept=TRUE 
+    ## + Fold08: intercept=TRUE 
+    ## - Fold08: intercept=TRUE 
+    ## + Fold09: intercept=TRUE 
+    ## - Fold09: intercept=TRUE 
+    ## + Fold10: intercept=TRUE 
+    ## - Fold10: intercept=TRUE 
+    ## Aggregating results
+    ## Fitting final model on full training set
+
 Set tuning parameters for each model we will be looking at
 
 ``` r
@@ -1012,101 +1126,6 @@ xgb_grid = expand.grid(
   subsample = 1
 )
 ```
-
-##### Linear Regression Model
-
-Check for multicollienarity issues
-
-``` r
-linear_train_top10 = train_set_top10 %>% 
-  mutate(ExterQual = as.factor(ExterQual))
-linear_val_top10 = validation_set_top10 %>% 
-  mutate(ExterQual = as.factor(ExterQual))
-correlation_matrix = linear_train_top10 %>% 
-  select(-ExterQual) %>% 
-  cor()
-print("Correlation matrix of predictors:")
-```
-
-    ## [1] "Correlation matrix of predictors:"
-
-``` r
-print(round(correlation_matrix, 2))
-```
-
-    ##             GrLivArea OverallQual TotalBsmtSF YearBuilt GarageArea BsmtFinSF1
-    ## GrLivArea        1.00        0.60        0.43      0.26       0.48       0.14
-    ## OverallQual      0.60        1.00        0.57      0.59       0.56       0.20
-    ## TotalBsmtSF      0.43        0.57        1.00      0.42       0.50       0.45
-    ## YearBuilt        0.26        0.59        0.42      1.00       0.50       0.25
-    ## GarageArea       0.48        0.56        0.50      0.50       1.00       0.24
-    ## BsmtFinSF1       0.14        0.20        0.45      0.25       0.24       1.00
-    ## MSSubClass       0.08        0.01       -0.27      0.01      -0.10      -0.08
-    ## FullBath         0.63        0.54        0.33      0.48       0.41       0.05
-    ## LotArea          0.37        0.15        0.30      0.04       0.28       0.19
-    ## SalePrice        0.71        0.80        0.65      0.58       0.64       0.35
-    ##             MSSubClass FullBath LotArea SalePrice
-    ## GrLivArea         0.08     0.63    0.37      0.71
-    ## OverallQual       0.01     0.54    0.15      0.80
-    ## TotalBsmtSF      -0.27     0.33    0.30      0.65
-    ## YearBuilt         0.01     0.48    0.04      0.58
-    ## GarageArea       -0.10     0.41    0.28      0.64
-    ## BsmtFinSF1       -0.08     0.05    0.19      0.35
-    ## MSSubClass        1.00     0.12   -0.30     -0.10
-    ## FullBath          0.12     1.00    0.17      0.56
-    ## LotArea          -0.30     0.17    1.00      0.34
-    ## SalePrice        -0.10     0.56    0.34      1.00
-
-``` r
-corrplot(correlation_matrix, method = "color", type = "upper", 
-         tl.col = "black", tl.srt = 45)
-```
-
-![](AmesHousing_files/figure-gfm/unnamed-chunk-40-1.png)<!-- -->
-
-Build Linear Regression models
-
-``` r
-initial_lm = lm(SalePrice ~ ., data = linear_train_top10)
-vif_values = vif(initial_lm)
-print("Variance Inflation Factors (VIF):")
-```
-
-    ## [1] "Variance Inflation Factors (VIF):"
-
-``` r
-print(vif_values)
-```
-
-    ##                 GVIF Df GVIF^(1/(2*Df))
-    ## GrLivArea   2.677097  1        1.636184
-    ## OverallQual 3.186929  1        1.785197
-    ## TotalBsmtSF 2.195095  1        1.481585
-    ## YearBuilt   2.310674  1        1.520090
-    ## GarageArea  1.822443  1        1.349979
-    ## BsmtFinSF1  1.335186  1        1.155502
-    ## ExterQual   2.672209  3        1.177999
-    ## MSSubClass  1.301720  1        1.140930
-    ## FullBath    2.145843  1        1.464870
-    ## LotArea     1.415687  1        1.189826
-
-``` r
-models = list()
-models$lm = build_and_evaluate("lm", linear_train_top10, linear_val_top10)
-```
-
-    ## + Fold1: intercept=TRUE 
-    ## - Fold1: intercept=TRUE 
-    ## + Fold2: intercept=TRUE 
-    ## - Fold2: intercept=TRUE 
-    ## + Fold3: intercept=TRUE 
-    ## - Fold3: intercept=TRUE 
-    ## + Fold4: intercept=TRUE 
-    ## - Fold4: intercept=TRUE 
-    ## + Fold5: intercept=TRUE 
-    ## - Fold5: intercept=TRUE 
-    ## Aggregating results
-    ## Fitting final model on full training set
 
 ##### RF, SVM and XGB
 
@@ -1148,12 +1167,12 @@ print(results[order(results$RMSE), ])
 ```
 
     ##   Model     RMSE  Rsquared
-    ## 3   svm 24479.56 0.8968241
-    ## 4   xgb 25100.69 0.8915218
-    ## 2    rf 26011.66 0.8835050
-    ## 1    lm 27419.57 0.8705529
+    ## 3   svm 24320.06 0.8962633
+    ## 2    rf 24583.72 0.8940019
+    ## 4   xgb 24625.06 0.8936450
+    ## 1    lm 27081.94 0.8713640
 
-### Can we beat the xgb
+### Can we beat the svm
 
 Lets try some more models
 
@@ -1240,19 +1259,19 @@ print(results[order(results$RMSE), ])
 ```
 
     ##         Model     RMSE  Rsquared
-    ## 9         gbm 24228.60 0.8989287
-    ## 3         svm 24479.56 0.8968241
-    ## 4         xgb 25100.69 0.8915218
-    ## 2          rf 26011.66 0.8835050
-    ## 1          lm 27419.57 0.8705529
-    ## 11     cubist 27472.12 0.8700563
-    ## 7  elasticnet 27487.15 0.8699140
-    ## 6       lasso 27500.51 0.8697876
-    ## 12    gausspr 27974.48 0.8652605
-    ## 10       mars 28728.74 0.8578967
-    ## 5       ridge 28789.47 0.8572953
-    ## 8       rpart 34898.76 0.7903035
-    ## 13        knn 41886.89 0.6979163
+    ## 9         gbm 24026.14 0.8987556
+    ## 3         svm 24320.06 0.8962633
+    ## 11     cubist 24461.43 0.8950538
+    ## 2          rf 24583.72 0.8940019
+    ## 4         xgb 24625.06 0.8936450
+    ## 10       mars 25081.77 0.8896634
+    ## 12    gausspr 26721.34 0.8747668
+    ## 1          lm 27081.94 0.8713640
+    ## 7  elasticnet 27089.73 0.8712900
+    ## 6       lasso 27093.72 0.8712521
+    ## 5       ridge 27926.98 0.8632111
+    ## 8       rpart 32609.29 0.8134970
+    ## 13        knn 42022.22 0.6902859
 
 ##### Plot RMSE
 
@@ -1267,7 +1286,7 @@ ggplot(results, aes(x = reorder(Model, -RMSE), y = RMSE)) +
   theme_minimal()
 ```
 
-![](AmesHousing_files/figure-gfm/unnamed-chunk-46-1.png)<!-- -->
+![](AmesHousing_files/figure-gfm/unnamed-chunk-47-1.png)<!-- -->
 
 ##### Plot Rsq
 
@@ -1282,7 +1301,7 @@ ggplot(results, aes(x = reorder(Model, Rsquared), y = Rsquared)) +
   theme_minimal()
 ```
 
-![](AmesHousing_files/figure-gfm/unnamed-chunk-47-1.png)<!-- -->
+![](AmesHousing_files/figure-gfm/unnamed-chunk-48-1.png)<!-- -->
 
 Identify top 3 models
 
@@ -1291,7 +1310,7 @@ top3_models = results$Model[order(results$RMSE)][1:3]
 cat("Top 3 models:", paste(top3_models, collapse=", "), "\n")
 ```
 
-    ## Top 3 models: gbm, svm, xgb
+    ## Top 3 models: gbm, svm, cubist
 
 Ensemble method: Average predictions from top 3 models
 
@@ -1305,16 +1324,8 @@ for (model_name in top3_models) {
   if (length(preds) != nrow(validation_set_top10)) {
     stop(paste("Predictions from", model_name, "are not the right length"))
   }
-  print(paste("Adding predictions from model:", model_name))
   ensemble_preds = ensemble_preds + preds
 }
-```
-
-    ## [1] "Adding predictions from model: gbm"
-    ## [1] "Adding predictions from model: svm"
-    ## [1] "Adding predictions from model: xgb"
-
-``` r
 ensemble_preds = ensemble_preds / length(top3_models)
 
 
@@ -1334,20 +1345,20 @@ print(results[order(results$RMSE), ])
 ```
 
     ##            Model     RMSE  Rsquared
-    ## 14 ensemble_top3 23714.29 0.9031742
-    ## 9            gbm 24228.60 0.8989287
-    ## 3            svm 24479.56 0.8968241
-    ## 4            xgb 25100.69 0.8915218
-    ## 2             rf 26011.66 0.8835050
-    ## 1             lm 27419.57 0.8705529
-    ## 11        cubist 27472.12 0.8700563
-    ## 7     elasticnet 27487.15 0.8699140
-    ## 6          lasso 27500.51 0.8697876
-    ## 12       gausspr 27974.48 0.8652605
-    ## 10          mars 28728.74 0.8578967
-    ## 5          ridge 28789.47 0.8572953
-    ## 8          rpart 34898.76 0.7903035
-    ## 13           knn 41886.89 0.6979163
+    ## 14 ensemble_top3 23491.98 0.9032073
+    ## 9            gbm 24026.14 0.8987556
+    ## 3            svm 24320.06 0.8962633
+    ## 11        cubist 24461.43 0.8950538
+    ## 2             rf 24583.72 0.8940019
+    ## 4            xgb 24625.06 0.8936450
+    ## 10          mars 25081.77 0.8896634
+    ## 12       gausspr 26721.34 0.8747668
+    ## 1             lm 27081.94 0.8713640
+    ## 7     elasticnet 27089.73 0.8712900
+    ## 6          lasso 27093.72 0.8712521
+    ## 5          ridge 27926.98 0.8632111
+    ## 8          rpart 32609.29 0.8134970
+    ## 13           knn 42022.22 0.6902859
 
 ##### Plot the Best Predictions
 
@@ -1360,6 +1371,8 @@ plot_data = data.frame(
 ggplot(plot_data, aes(x = Actual, y = Predicted)) +
   geom_point(color = "steelblue", alpha = 0.6) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  scale_y_continuous(labels = scales::label_dollar()) +
+  scale_x_continuous(labels = scales::label_dollar()) +
   labs(
     title = "Actual vs. Predicted Sale Prices (Ensemble)",
     x = "Actual Sale Price",
@@ -1368,7 +1381,7 @@ ggplot(plot_data, aes(x = Actual, y = Predicted)) +
   theme_minimal()
 ```
 
-![](AmesHousing_files/figure-gfm/unnamed-chunk-50-1.png)<!-- -->
+![](AmesHousing_files/figure-gfm/unnamed-chunk-51-1.png)<!-- -->
 
 ### Predict on the Test/Predict Set
 
@@ -1376,31 +1389,91 @@ ggplot(plot_data, aes(x = Actual, y = Predicted)) +
 top3_models
 ```
 
-    ## [1] "gbm" "svm" "xgb"
+    ## [1] "gbm"    "svm"    "cubist"
 
 Get predictions for the top 3 models and take an average
 
 ``` r
 set.seed(23)
 
+avg_test_preds = c()
+
 predictions1 = predict(models$svm$model, newdata = test)
-predictions2 = predict(models$xgb$model, newdata = test)
+predictions2 = predict(models$cubist$model, newdata = test)
 predictions3 = predict(models$gbm$model, newdata = test)
 
-avg_test_preds = (predictions1 + predictions2 + predictions3)/3
+avg_test_preds = ((predictions1 + predictions2 + predictions3)/3)
 test$SalePricePred = round(avg_test_preds,-2)
 ```
 
 ``` r
-head(test[,57:61])
+head(test[,56:60])
 ```
 
     ## # A tibble: 6 × 5
     ##   SaleType SaleCondition perc1stSF perc2ndSF SalePricePred
     ##   <chr>    <chr>             <dbl>     <dbl>         <dbl>
-    ## 1 WD       Normal            1         0            133000
-    ## 2 WD       Normal            0.570     0.430        180400
-    ## 3 WD       Normal            0.577     0.423        186900
-    ## 4 WD       Normal            1         0            198400
-    ## 5 WD       Normal            0.461     0.539        172800
-    ## 6 WD       Normal            0.539     0.461        164400
+    ## 1 WD       Normal            1         0            120300
+    ## 2 WD       Normal            0.570     0.430        177100
+    ## 3 WD       Normal            0.577     0.423        182000
+    ## 4 WD       Normal            1         0            188600
+    ## 5 WD       Normal            0.461     0.539        173100
+    ## 6 WD       Normal            0.539     0.461        163000
+
+Plot distributions of predictions for the test set
+
+``` r
+test %>% 
+  ggplot(aes(x = SalePricePred)) +
+  geom_histogram(fill = "steelblue", color = "white", bins = 30) +
+  geom_vline(xintercept = mean(test$SalePricePred), color = "red", linetype = "dashed") +
+  geom_vline(xintercept = median(test$SalePricePred), color = "darkgreen") +
+  scale_x_continuous(labels = scales::label_dollar()) +
+  ggtitle("Distribution of Sale Price Predictions") +
+  xlab("Sale Price Predictions") +
+  ylab("Count") +
+  theme_minimal()
+```
+
+![](AmesHousing_files/figure-gfm/unnamed-chunk-55-1.png)<!-- --> Plot of
+the distribution of `SalePrice` from the training set
+
+``` r
+train %>% 
+  filter(SalePrice < 570000) %>% 
+  ggplot(aes(x = SalePrice)) +
+  geom_histogram(fill = "steelblue", color = "white", bins = 30) +
+  geom_vline(xintercept = mean(train$SalePrice), color = "red", linetype = "dashed") +
+  geom_vline(xintercept = median(train$SalePrice), color = "darkgreen") +
+  scale_x_continuous(labels = scales::label_dollar()) +
+  ggtitle("Distribution of Sale Price") +
+  xlab("Sale Price") +
+  ylab("Count") +
+  theme_minimal()
+```
+
+![](AmesHousing_files/figure-gfm/unnamed-chunk-56-1.png)<!-- -->
+
+``` r
+median(test$SalePricePred)
+```
+
+    ## [1] 158600
+
+``` r
+median(train$SalePrice)
+```
+
+    ## [1] 162000
+
+``` r
+mean(test$SalePricePred)
+```
+
+    ## [1] 178798.6
+
+``` r
+mean(train$SalePrice)
+```
+
+    ## [1] 179207.5
